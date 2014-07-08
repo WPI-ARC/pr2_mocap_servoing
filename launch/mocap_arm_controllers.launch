@@ -1,0 +1,20 @@
+<launch>
+
+  <arg name="output" default="screen"/>
+  <arg name="left_arm_pose_topic" default="/l_arm_pose_controller/pose" />
+  <arg name="right_arm_pose_topic" default="/r_arm_pose_controller/pose" />
+
+  <!-- Load the parameters that MoveIt! needs -->
+  <include file="$(find archie_moveit_config)/launch/planning_context.launch" />
+
+  <!-- Start the left arm controller -->
+  <node pkg="pr2_mocap_servoing" type="pr2_left_arm_controller" name="pr2_left_arm_controller" output="$(arg output)">
+    <param name="arm_pose_topic" type="string" value="$(arg left_arm_pose_topic)" />
+  </node>
+
+  <!-- Start the right arm controller -->
+  <node pkg="pr2_mocap_servoing" type="pr2_right_arm_controller" name="pr2_right_arm_controller" output="$(arg output)">
+    <param name="arm_pose_topic" type="string" value="$(arg right_arm_pose_topic)" />
+  </node>
+
+</launch>
