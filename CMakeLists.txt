@@ -5,6 +5,7 @@ project(pr2_mocap_servoing)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  arc_utilities
   control_msgs
   geometry_msgs
   roscpp
@@ -12,10 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   trajectory_msgs
+  actionlib
+  pr2_controllers_msgs
   moveit_msgs
   moveit_core
   moveit_ros_planning
 )
+find_package(cmake_modules REQUIRED)
 find_package(Eigen REQUIRED)
 
 ## System dependencies are found with CMake's conventions
@@ -87,7 +91,7 @@ find_package(Eigen REQUIRED)
 ## LIBRARIES: libraries you create in this project that dependent projects also need
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS control_msgs geometry_msgs roscpp rospy sensor_msgs std_msgs trajectory_msgs moveit_msgs moveit_core moveit_ros_planning DEPENDS system_lib Eigen)
+catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS arc_utilities control_msgs geometry_msgs roscpp rospy sensor_msgs std_msgs trajectory_msgs actionlib pr2_controllers_msgs moveit_msgs moveit_core moveit_ros_planning DEPENDS system_lib Eigen)
 
 ###########
 ## Build ##
@@ -96,7 +100,7 @@ catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS control_msgs geometry_msgs ro
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
-include_directories(include ${catkin_INCLUDE_DIRS} ${Eigen_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} SYSTEM ${Eigen_INCLUDE_DIRS})
 
 ## Set build flags for working with OpenMP
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")

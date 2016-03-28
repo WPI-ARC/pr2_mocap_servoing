@@ -17,12 +17,13 @@
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
 #include <pr2_controllers_msgs/JointTrajectoryAction.h>
 #include <actionlib/client/simple_action_client.h>
+#include <arc_utilities/eigen_helpers.hpp>
+#include <arc_utilities/pretty_print.hpp>
 #include <pr2_mocap_servoing/mocap_servoing_controller.hpp>
-#include <pr2_mocap_servoing/eigen_pinv.hpp>
 
 using namespace pr2_mocap_servoing;
 
-MocapServoingController::MocapServoingController(ros::NodeHandle& nh, std::string group_name, std::string arm_pose_topic, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, double kp, double ki, double kd) : nh_(nh)
+MocapServoingController::MocapServoingController(ros::NodeHandle& nh, std::string group_name, std::string arm_pose_topic, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, std::string abort_service, double kp, double ki, double kd) : nh_(nh)
 {
     // Set mode
     mode_ = EXTERNAL_POSE;
@@ -72,6 +73,8 @@ MocapServoingController::MocapServoingController(ros::NodeHandle& nh, std::strin
     arm_pose_sub_ = nh_.subscribe(arm_pose_topic, 1, &MocapServoingController::ArmPoseCB, this);
     target_pose_sub_ = nh_.subscribe(target_pose_topic, 1, &MocapServoingController::TargetPoseCB, this);
     arm_config_sub_ = nh_.subscribe(arm_config_topic, 1, &MocapServoingController::ArmConfigCB, this);
+    // Setup abort service
+    abort_server_ = nh_.advertiseService(abort_service, &MocapServoingController::AbortCB, this);
     // Setup trajectory controller interface
     arm_client_ = std::unique_ptr<actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction>>(new actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction>(arm_command_action, true));
     ROS_INFO("Waiting for arm controllers to come up...");
@@ -97,7 +100,7 @@ MocapServoingController::MocapServoingController(ros::NodeHandle& nh, std::strin
     state_ = PAUSED;
 }
 
-MocapServoingController::MocapServoingController(ros::NodeHandle &nh, std::string group_name, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, double kp, double ki, double kd) : nh_(nh)
+MocapServoingController::MocapServoingController(ros::NodeHandle &nh, std::string group_name, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, std::string abort_service, double kp, double ki, double kd) : nh_(nh)
 {
     // Set mode
     mode_ = INTERNAL_POSE;
@@ -146,6 +149,8 @@ MocapServoingController::MocapServoingController(ros::NodeHandle &nh, std::strin
     // Setup topics
     target_pose_sub_ = nh_.subscribe(target_pose_topic, 1, &MocapServoingController::TargetPoseCB, this);
     arm_config_sub_ = nh_.subscribe(arm_config_topic, 1, &MocapServoingController::ArmConfigCB, this);
+    // Setup abort service
+    abort_server_ = nh_.advertiseService(abort_service, &MocapServoingController::AbortCB, this);
     // Setup trajectory controller interface
     arm_client_ = std::unique_ptr<actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction>>(new actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction>(arm_command_action, true));
     ROS_INFO("Waiting for arm controllers to come up...");
@@ -175,6 +180,9 @@ std::vector<double> MocapServoingController::ComputeNextStep(Pose& current_arm_p
 {
     // Get the current jacobian
     Eigen::MatrixXd current_jacobian = ComputeJacobian(current_configuration);
+#ifdef VERBOSE_DEBUGGING
+    std::cout << "Current Jacobian: " << current_jacobian << std::endl;
+#endif
     // Compute the pose error in our 'world frame'
     Twist pose_error = ComputePoseError(current_arm_pose, current_target_pose);
     // Compute the integral of pose error & update the stored value
@@ -184,26 +192,32 @@ std::vector<double> MocapServoingController::ComputeNextStep(Pose& current_arm_p
     // Update the stored pose error
     last_pose_error_ = pose_error;
     // Convert pose errors into cartesian velocity
-    Twist pose_correction = pose_error * kp_ + pose_error_integral_ * ki_ + pose_error_derivative * kd_;
+    Twist pose_correction = (pose_error * kp_) + (pose_error_integral_ * ki_) + (pose_error_derivative * kd_);
     // Use the Jacobian pseudoinverse
-    Eigen::VectorXd joint_correction = EIGEN_PINV::pinv(current_jacobian, 0.001) * pose_correction;
+    Eigen::VectorXd joint_correction = EigenHelpers::Pinv(current_jacobian, EigenHelpers::SuggestedRcond()) * pose_correction;
+#ifdef VERBOSE_DEBUGGING
+    std::cout << "Current raw joint correction: " << joint_correction << std::endl;
+#endif
     // Bound qdot to max magnitude of 0.05
     double joint_correction_magnitude = joint_correction.norm();
     if (joint_correction_magnitude > max_joint_correction_)
     {
         joint_correction = (joint_correction / joint_correction_magnitude) * max_joint_correction_;
     }
+#ifdef VERBOSE_DEBUGGING
+    std::cout << "Current limited joint correction: " << joint_correction << std::endl;
+#endif
     // Combine the joint correction with the current configuration to form the target configuration
     std::vector<double> target_configuration(PR2_ARM_JOINTS);
-    target_configuration[0] = current_configuration[0] + (joint_correction[0] * SHOULDER_PAN_DAMPING);
-    target_configuration[1] = current_configuration[1] + (joint_correction[1] * SHOULDER_LIFT_DAMPING);
-    target_configuration[2] = current_configuration[2] + (joint_correction[2] * UPPER_ARM_ROLL_DAMPING);
-    target_configuration[3] = current_configuration[3] + (joint_correction[3] * ELBOW_FLEX_DAMPING);
-    target_configuration[4] = current_configuration[4] + (joint_correction[4] * FOREARM_ROLL_DAMPING);
-    target_configuration[5] = current_configuration[5] + (joint_correction[5] * WRIST_FLEX_DAMPING);
-    target_configuration[6] = current_configuration[6] + (joint_correction[6] * WRIST_ROLL_DAMPING);
-    std::cout << "Current configuration: " << PrettyPrint(current_configuration, true) << std::endl;
-    std::cout << "New target configuration: " << PrettyPrint(target_configuration, true) << std::endl;
+    target_configuration[0] = current_configuration[0] + (joint_correction[0] * SHOULDER_PAN_DAMPING) + SHOULDER_PAN_OFFSET;
+    target_configuration[1] = current_configuration[1] + (joint_correction[1] * SHOULDER_LIFT_DAMPING) + SHOULDER_LIFT_OFFSET;
+    target_configuration[2] = current_configuration[2] + (joint_correction[2] * UPPER_ARM_ROLL_DAMPING) + UPPER_ARM_ROLL_OFFSET;
+    target_configuration[3] = current_configuration[3] + (joint_correction[3] * ELBOW_FLEX_DAMPING) + ELBOW_FLEX_OFFSET;
+    target_configuration[4] = current_configuration[4] + (joint_correction[4] * FOREARM_ROLL_DAMPING) + FOREARM_ROLL_OFFSET;
+    target_configuration[5] = current_configuration[5] + (joint_correction[5] * WRIST_FLEX_DAMPING) + WRIST_FLEX_OFFSET;
+    target_configuration[6] = current_configuration[6] + (joint_correction[6] * WRIST_ROLL_DAMPING) + WRIST_ROLL_OFFSET;
+    std::cout << "Current configuration: " << PrettyPrint::PrettyPrint(current_configuration, true) << std::endl;
+    std::cout << "New target configuration: " << PrettyPrint::PrettyPrint(target_configuration, true) << std::endl;
     return target_configuration;
 }
 
