@@ -1,27 +1,23 @@
 <launch>
 
   <arg name="output" default="screen"/>
-  <arg name="left_arm_pose_topic" default="/l_arm_pose_controller/pose" />
-  <arg name="right_arm_pose_topic" default="/r_arm_pose_controller/pose" />
 
   <arg name="kp" default="1.0" />
   <arg name="kd" default="0.0" />
-  <arg name="ki" default="0.0" />
+  <arg name="ki" default="0.2" />
 
   <!-- Load the parameters that MoveIt! needs -->
   <include file="$(find archie_moveit_config)/launch/planning_context.launch" />
 
   <!-- Start the left arm controller -->
-  <node pkg="pr2_mocap_servoing" type="pr2_left_arm_controller" name="pr2_left_arm_controller" output="$(arg output)">
-    <param name="arm_pose_topic" type="string" value="$(arg left_arm_pose_topic)" />
+  <node pkg="pr2_mocap_servoing" type="pr2_left_arm_controller_no_mocap" name="pr2_left_arm_controller" output="$(arg output)">
     <param name="kp" type="double" value="$(arg kp)" />
     <param name="kd" type="double" value="$(arg kd)" />
     <param name="ki" type="double" value="$(arg ki)" />
   </node>
 
   <!-- Start the right arm controller -->
-  <node pkg="pr2_mocap_servoing" type="pr2_right_arm_controller" name="pr2_right_arm_controller" output="$(arg output)">
-    <param name="arm_pose_topic" type="string" value="$(arg right_arm_pose_topic)" />
+  <node pkg="pr2_mocap_servoing" type="pr2_right_arm_controller_no_mocap" name="pr2_right_arm_controller" output="$(arg output)">
     <param name="kp" type="double" value="$(arg kp)" />
     <param name="kd" type="double" value="$(arg kd)" />
     <param name="ki" type="double" value="$(arg ki)" />

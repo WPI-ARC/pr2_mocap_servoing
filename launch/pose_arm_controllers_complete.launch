@@ -1,0 +1,14 @@
+<launch>
+
+  <arg name="output" default="screen"/>
+
+  <!-- Start the vicon bridge -->
+  <include file="$(find lightweight_vicon_bridge)/launch/vicon_bridge.launch" />
+
+  <!-- Start the mocap pose publishers -->
+  <include file="$(find mocap_robot_pose)/launch/mocap_robot_pose_pubs.launch" />
+
+  <!-- Start the arm controllers -->
+  <include file="$(find pr2_mocap_servoing)/launch/pose_arm_controllers.launch" />
+
+</launch>

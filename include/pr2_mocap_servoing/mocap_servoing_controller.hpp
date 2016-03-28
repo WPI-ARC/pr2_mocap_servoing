@@ -13,15 +13,20 @@
 #include <urdf_model/model.h>
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <moveit/robot_state/robot_state.h>
+#include <std_srvs/Empty.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <pr2_controllers_msgs/JointTrajectoryControllerState.h>
 #include <pr2_controllers_msgs/JointTrajectoryAction.h>
 #include <actionlib/client/simple_action_client.h>
-#include <pr2_mocap_servoing/prettyprint.h>
+#include <arc_utilities/eigen_helpers.hpp>
+#include <arc_utilities/pretty_print.hpp>
 
 #define _USE_MATH_DEFINES
 #define PR2_ARM_JOINTS 7
 #define TWIST_DOF 6
+
+// Set the level of debugging verbosity
+#define VERBOSE_DEBUGGING
 
 // Set the "unit" maximum joint change/sec
 #define MAXIMUM_JOINT_VELOCITY 1.0
@@ -46,6 +51,15 @@
 #define FOREARM_ROLL_DAMPING 1.0
 #define WRIST_FLEX_DAMPING 1.0
 #define WRIST_ROLL_DAMPING 1.0
+
+// Set additional offsets for each of the arm joints
+#define SHOULDER_PAN_OFFSET 0.0
+#define SHOULDER_LIFT_OFFSET 0.0
+#define UPPER_ARM_ROLL_OFFSET 0.0
+#define ELBOW_FLEX_OFFSET 0.0
+#define FOREARM_ROLL_OFFSET 0.0
+#define WRIST_FLEX_OFFSET 0.0
+#define WRIST_ROLL_OFFSET 0.0
 
 #ifndef MOCAP_SERVOING_CONTROLLER_HPP
 #define MOCAP_SERVOING_CONTROLLER_HPP
@@ -100,6 +114,8 @@ namespace pr2_mocap_servoing
         ros::Subscriber arm_pose_sub_;
         ros::Subscriber target_pose_sub_;
         ros::Subscriber arm_config_sub_;
+
+        ros::ServiceServer abort_server_;
 
         std::unique_ptr<actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction>> arm_client_;
 
@@ -224,6 +240,19 @@ namespace pr2_mocap_servoing
             state_ = PAUSED;
         }
 
+        inline bool AbortCB(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+        {
+            // Cancel the current pose target
+            ROS_INFO("Cancelling pose target, switching to PAUSED mode");
+            // Set the status
+            target_pose_valid_ = false;
+            // Check and set the global status
+            RefreshGlobalStatus();
+            // We don't reset the timer, instead we cancel it
+            target_pose_watchdog_.stop();
+            return true;
+        }
+
         inline Pose ComputeArmPose(std::vector<double>& current_configuration)
         {
             // Update joint values
@@ -294,11 +323,9 @@ namespace pr2_mocap_servoing
 
     public:
 
-        MocapServoingController(ros::NodeHandle& nh, std::string group_name, std::string arm_pose_topic, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, double kp, double ki, double kd);
+        MocapServoingController(ros::NodeHandle& nh, std::string group_name, std::string arm_pose_topic, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, std::string abort_service, double kp, double ki, double kd);
 
-        MocapServoingController(ros::NodeHandle &nh, std::string group_name, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, double kp, double ki, double kd);
-
-        ~MocapServoingController() {}
+        MocapServoingController(ros::NodeHandle &nh, std::string group_name, std::string target_pose_topic, std::string arm_config_topic, std::string arm_command_action, std::string abort_service, double kp, double ki, double kd);
 
         void Loop();
     };
